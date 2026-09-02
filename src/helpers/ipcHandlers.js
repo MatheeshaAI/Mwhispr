@@ -587,6 +587,8 @@ class IPCHandlers {
     this.windowsLoopbackAudioManager = managers.windowsLoopbackAudioManager;
     this.meetingAecManager = managers.meetingAecManager;
     this.getQdrantManager = managers.getQdrantManager;
+    this.getMcpClientManager = managers.getMcpClientManager;
+    this.getAcpClaudeCodeManager = managers.getAcpClaudeCodeManager;
     this.oauthProtocolRegistered = managers.oauthProtocolRegistered === true;
     this.oauthProtocol = managers.oauthProtocol || "openwhispr";
     this.sessionId = crypto.randomUUID();
@@ -8861,6 +8863,98 @@ class IPCHandlers {
     ipcMain.on("cloud-agent-stream-cancel", (event, requestId) => {
       if (typeof requestId !== "string" || !requestId.trim()) return;
       this._agentStreamRequests.cancel(event.sender.id, requestId);
+    });
+
+    // MCP client (Settings > Integrations): user-configured servers the chat
+    // assistant's ToolRegistry and the Claude Code (ACP) session both draw on.
+    ipcMain.handle("mcp-list-servers", async () => {
+      return this.getMcpClientManager?.()?.list() ?? [];
+    });
+
+    ipcMain.handle("mcp-add-server", async (_event, config) => {
+      try {
+        return { success: true, server: await this.getMcpClientManager()?.addServer(config) };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    });
+
+    ipcMain.handle("mcp-update-server", async (_event, id, patch) => {
+      try {
+        return { success: true, server: await this.getMcpClientManager()?.updateServer(id, patch) };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    });
+
+    ipcMain.handle("mcp-remove-server", async (_event, id) => {
+      try {
+        await this.getMcpClientManager()?.removeServer(id);
+        return { success: true };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    });
+
+    ipcMain.handle("mcp-reconnect-server", async (_event, id) => {
+      try {
+        return { success: true, server: await this.getMcpClientManager()?.connectServer(id) };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    });
+
+    ipcMain.handle("mcp-list-connected-tools", async () => {
+      return this.getMcpClientManager?.()?.listConnectedTools() ?? [];
+    });
+
+    ipcMain.handle("mcp-call-tool", async (_event, serverId, toolName, args) => {
+      try {
+        const result = await this.getMcpClientManager()?.callTool(serverId, toolName, args);
+        return { success: true, result };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    });
+
+    // Claude Code via the Agent Client Protocol (ACP) — the chat assistant's
+    // "use my subscription" provider. One prompt in flight per app instance;
+    // requestId only threads chunks back to the caller, mirroring the cloud
+    // agent stream above.
+    ipcMain.on("acp-stream-start", async (event, requestId, text) => {
+      if (typeof requestId !== "string" || !requestId.trim()) return;
+      const sender = event.sender;
+      const sendToRenderer = (channel, payload) => {
+        if (!sender.isDestroyed()) sender.send(channel, payload);
+      };
+      const manager = this.getAcpClaudeCodeManager?.();
+      if (!manager) {
+        sendToRenderer("acp-stream-error", { requestId, error: "Claude Code is unavailable" });
+        return;
+      }
+      try {
+        const result = await manager.sendPrompt(text, {
+          onChunk: (update) => sendToRenderer("acp-stream-chunk", { requestId, update }),
+          onPermissionRequest: (request) =>
+            sendToRenderer("acp-permission-request", { requestId, ...request }),
+        });
+        sendToRenderer("acp-stream-end", { requestId, stopReason: result?.stopReason });
+      } catch (error) {
+        debugLogger.error("Claude Code (ACP) stream error:", error);
+        sendToRenderer("acp-stream-error", { requestId, error: error.message });
+      }
+    });
+
+    ipcMain.on("acp-stream-cancel", () => {
+      this.getAcpClaudeCodeManager?.()?.cancel();
+    });
+
+    ipcMain.handle("acp-respond-permission", (_event, requestId, optionId) => {
+      return this.getAcpClaudeCodeManager?.()?.respondToPermission(requestId, optionId) ?? false;
+    });
+
+    ipcMain.handle("acp-check-availability", () => {
+      return { available: this.getAcpClaudeCodeManager?.()?.isInstalled() ?? false };
     });
 
     ipcMain.handle("agent-open-note", async (_event, noteId) => {

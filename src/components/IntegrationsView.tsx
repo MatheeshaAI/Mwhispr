@@ -21,6 +21,7 @@ import type { CalendarAccount } from "../types/calendar";
 import ApiKeysSection from "./ApiKeysSection";
 import CliIntegrationCard from "./CliIntegrationCard";
 import McpIntegrationCard from "./McpIntegrationCard";
+import McpServersCard from "./McpServersCard";
 import googleCalendarIcon from "../assets/icons/google-calendar.svg";
 import microsoftCalendarIcon from "../assets/icons/microsoft-calendar.svg";
 import appleCalendarIcon from "../assets/icons/apple-calendar.svg";
@@ -467,6 +468,14 @@ export default function IntegrationsView({ isPaid, onUpgrade }: IntegrationsView
       <div>
         <SectionLabel>{t("integrations.sections.mcp")}</SectionLabel>
         <McpIntegrationCard isPaid={isPaid} onUpgrade={onUpgrade} />
+      </div>
+
+      <div>
+        <SectionLabel>{t("integrations.sections.mcpServers")}</SectionLabel>
+        <p className="text-xs text-muted-foreground/70 mb-2 -mt-1">
+          {t("integrations.mcpServers.description")}
+        </p>
+        <McpServersCard />
       </div>
 
       <div>

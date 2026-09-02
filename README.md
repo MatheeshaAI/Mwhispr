@@ -44,7 +44,8 @@ OpenWhispr turns your voice into text, notes, and actions from your desktop. Pre
 
 - **Voice dictation** — global hotkey to dictate into any app with automatic pasting
 - **Dictation translation** — dedicated hotkey to dictate in one language and paste the text in another
-- **AI agent** — talk to GPT-5, Claude, Gemini, Groq, Tinfoil, OpenRouter, or local models with a named voice assistant
+- **AI agent** — talk to GPT-5, Claude, Gemini, Groq, Tinfoil, OpenRouter, local models, or Claude Code (via the Agent Client Protocol, billed against your own Claude subscription — no API key needed) with a named voice assistant
+- **MCP client** — connect any MCP server (local command or remote URL) to give the chat assistant more tools; the same servers are available to a Claude Code session
 - **Voice Assistant hotkey** — dedicated hotkey that sends what you say straight to your AI assistant as a command, no wake word needed and no cleanup pass; highlighted text is edited in place. With auto-paste enabled, answers paste at a focused text cursor or stream into a floating panel and copy to the clipboard when no writable cursor is available. You can also opt in to sending a screenshot of your current screen as context
 - **Meeting transcription** — auto-detect Zoom, Teams, and FaceTime calls with live speaker diarization, voice fingerprinting, and Google, Microsoft, or Apple Calendar integration
 - **Local speaker diarization** — on-device speaker labelling with voice fingerprint recognition across meetings, no cloud required

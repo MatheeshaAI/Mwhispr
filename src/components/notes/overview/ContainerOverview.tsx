@@ -144,6 +144,7 @@ export function ContainerOverview({
           agentState={chat.agentState}
           onTextSubmit={chat.sendMessage}
           onCancel={chat.cancelStream}
+          onRespondPermission={chat.respondToPermission}
           conversations={chat.conversations}
           activeConversationId={chat.activeConversationId}
           onSwitchConversation={chat.switchConversation}

@@ -159,6 +159,9 @@ OpenWhispr is an Electron-based desktop dictation application that uses whisper.
 - **qdrantManager.js**: Qdrant vector DB sidecar process lifecycle (spawn, health check, shutdown)
 - **localEmbeddings.js**: Local text embedding via ONNX Runtime + all-MiniLM-L6-v2 (384-dim vectors)
 - **vectorIndex.js**: Qdrant collection management — upsert, delete, search, batch reindex
+- **mcpServerStore.js**: Pure JSON persistence for user-configured MCP servers (`userData/mcp-servers.json`) — add/update/remove/list, `sanitize()` normalizes a config to its stdio or http/sse shape. Unit-tested in `test/helpers/mcpServerStore.test.js`
+- **mcpClientManager.js**: MCP client (`@modelcontextprotocol/sdk`) — connects to each enabled server over stdio (`StdioClientTransport`) or HTTP/SSE, lists tools, proxies `callTool()`. Renderer never spawns processes directly; `createToolRegistry()` (`src/services/tools/index.ts`) fetches `listConnectedTools()` over IPC and wraps each as a namespaced `ToolDefinition` (`src/services/tools/mcpTool.ts`) so the chat assistant's tool-calling loop treats MCP tools like `search_notes` or `copy_to_clipboard`
+- **acpClaudeCodeManager.js**: Bridges the chat assistant to Claude Code over the Agent Client Protocol (ACP) — spawns the bundled `@zed-industries/claude-code-acp` adapter with `process.execPath` + `ELECTRON_RUN_AS_NODE=1` and drives it over stdio JSON-RPC (`@zed-industries/agent-client-protocol`). One session per app run, lazily created on first prompt; `newSession.mcpServers` is populated from the same enabled MCP server list `mcpClientManager` manages, so Claude Code gets those tools natively instead of through the ToolRegistry proxy. Tool-call permission requests round-trip to the renderer (`acp-permission-request` → `acpRespondToPermission`) with a 2-minute timeout so a surface with no approve/deny UI (the compact voice-assistant panel) can't hang the session forever. Claude Code resolves its own credentials (a `claude login` session, or `ANTHROPIC_API_KEY` if set) — no key is handled here, so usage is billed against the user's own subscription. `src/services/ai/acpUpdateTranslator.ts` maps ACP `session/update` variants onto the same `AgentStreamChunk` shape the cloud/AI-SDK streaming paths already yield. Unit-tested in `test/services/acpUpdateTranslator.test.js`
 - **windowConfig.js**: Centralized window configuration
 - **windowManager.js**: Window creation and lifecycle management
 - **cliBridge.js**: Loopback HTTP server on ports 8200–8219, bearer-token auth (token at `~/.openwhispr/cli-bridge.json`), 127.0.0.1-only. Used by the unified CLI to talk to a running desktop app.
@@ -704,6 +707,27 @@ Live meeting transcription runs two streams (mic + system-audio tap) and must ke
 - **Regression pins**: BYOK `session.update` payload and the disconnect-commit callback (`test/helpers/openaiRealtimeStreaming.test.js`, `tinfoilRealtimeStreaming.test.js`), token-endpoint wire bodies (`test/helpers/realtimeTokenProviders.test.js`). Tests named `characterization: …` pin known oddities on purpose — flip them deliberately when changing policy
 - **Fixtures**: `test/helpers/harness/pcmFixtures.js` — deterministic 24 kHz PCM generators (`makeSine`, `makeSeededNoise`, `mix`, `delayBy`, `toInt16Buffer`, `chunkBuffer`, …) used by the gate and echo-detector tests
 
+### 19. MCP Client & Claude Code (ACP)
+
+Two related, independently-enabled ways to extend the chat assistant beyond its built-in tools (`src/services/tools/index.ts`) and providers — MCP servers add tools to any provider; Claude Code replaces the provider entirely with a locally-run agent billed against the user's own subscription.
+
+**MCP client** (Settings → Integrations → MCP Servers, `McpServersCard.tsx`):
+
+- User adds servers (stdio command/args/env, or HTTP/SSE url/headers) — persisted via `mcpServerStore.js` to `userData/mcp-servers.json`, never localStorage (server `env`/`headers` can carry secrets)
+- `mcpClientManager.js` (main process) connects enabled servers on app launch and on demand (`connectServer`/`connectEnabled`), using `@modelcontextprotocol/sdk`'s `Client` + `StdioClientTransport`/`StreamableHTTPClientTransport`/`SSEClientTransport`
+- `createToolRegistry()` fetches connected servers' tools over IPC (`mcp-list-connected-tools`) and registers each as a `ToolDefinition` namespaced `mcp_{serverId}_{toolName}` (`src/services/tools/mcpTool.ts`) so they flow through the same tool-calling loop as `search_notes`/`create_note`/etc., for every non-ACP provider
+- IPC: `mcp-add-server`, `mcp-update-server`, `mcp-remove-server`, `mcp-reconnect-server`, `mcp-list-servers`, `mcp-list-connected-tools`, `mcp-call-tool`
+
+**Claude Code via ACP** (Settings → AI Models → Chat Assistant → "Use Claude Code", `ClaudeCodeAgentToggle.tsx`):
+
+- A standalone toggle (`chatAgentUseClaudeCode`) on the `chatIntelligence` scope only — it bypasses `chatAgentMode`/`chatAgentProvider`/`chatAgentModel` entirely rather than adding a new `InferenceMode`, so it can't leak into the five other inference scopes (dictation cleanup/agent, note formatting, translation) that share `InferenceConfigEditor`
+- `acpClaudeCodeManager.js` spawns the bundled `@zed-industries/claude-code-acp` adapter (`process.execPath` + `ELECTRON_RUN_AS_NODE=1`, no `npx`/network needed at runtime) and speaks the Agent Client Protocol (`@zed-industries/agent-client-protocol`) over stdio JSON-RPC — the same protocol Zed uses. One session per app run, created lazily on first prompt; `newSession.mcpServers` is populated from the same enabled MCP servers `mcpClientManager` tracks, so Claude Code gets those tools connected directly rather than proxied
+- Claude Code resolves its own credentials — a `claude login` session already on the machine, or `ANTHROPIC_API_KEY` if set in the environment. No key is ever handled by OpenWhispr for this path; usage is billed against the user's Claude subscription. `newSession`/`prompt` failing with ACP's `auth_required` error surfaces as "run `claude login`" rather than a raw RPC error
+- `ReasoningService.processTextStreamingAcp()` mirrors `processTextStreamingCloud`'s IPC-stream pattern (`streamFromAcpIPC`/`streamFromIPC`): `acp-stream-start` kicks off `sendPrompt()`, and `acp-stream-chunk`/`acp-stream-error`/`acp-stream-end` push back. `src/services/ai/acpUpdateTranslator.ts` maps ACP's `session/update` variants (`agent_message_chunk`, `tool_call`, `tool_call_update`) onto the existing `AgentStreamChunk` union, so `useChatStreaming.ts` needs only one extra branch (`isAcpAgent`) — no ACP-specific chunk handling
+- **Tool permissions**: Claude Code has its own filesystem/bash access (no `fs`/`terminal` client capabilities are declared, so it never asks OpenWhispr to proxy file I/O) — `requestPermission` is the real gate. It round-trips main → renderer (`acp-permission-request`) → `acpRespondToPermission`, rendered inline on the pending tool call (`ToolCallInfo.permission` in `ChatMessage.tsx`) in every full chat surface (`ChatView`, `EmbeddedChat`, `OverviewAskSection`). The compact voice-assistant panel (`AssistantPanel.tsx`) doesn't render an approve/deny control yet, so `acpClaudeCodeManager.js` times out an unanswered request after 2 minutes (auto-deny) rather than hang the session
+- **Known limitations**: one shared ACP session per app run, not one per OpenWhispr conversation, so switching chats does not reset Claude Code's own context; screenshots/selected-text context (voice-assistant vision) aren't threaded into the ACP path; the compact voice-assistant panel has no permission UI (falls back to the timeout above)
+- IPC: `acp-stream-start`/`acp-stream-cancel`/`acp-stream-chunk`/`acp-stream-error`/`acp-stream-end`, `acp-permission-request`/`acp-respond-permission`, `acp-check-availability` (structural install check only — login state is discovered lazily on first prompt)
+
 ## Development Guidelines
 
 ### Internationalization (i18n) — REQUIRED
@@ -781,6 +805,9 @@ Raster UI assets live in `src/assets/` (onboarding ones are named `onboarding-*`
 - [ ] Create a note about "quarterly revenue projections", search via agent for "financial forecast" — should match semantically
 - [ ] Verify Qdrant starts on app launch (check debug logs for "qdrant started successfully")
 - [ ] Kill Qdrant process manually — verify FTS5 keyword search still works as fallback
+- [ ] Add a stdio MCP server in Settings → Integrations, verify its tools appear in a chat response
+- [ ] Toggle "Use Claude Code" on, send a chat message — verify it streams without an API key configured (requires `claude login` on the machine)
+- [ ] Trigger a Claude Code tool call that needs permission — verify the approve/deny buttons render on the tool call and the turn resumes after a choice
 
 ### Common Issues and Solutions
 

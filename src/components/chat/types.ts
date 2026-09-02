@@ -6,6 +6,12 @@ export interface ToolCallInfo {
   result?: string;
   // Single object for note tools; search_notes attaches its result array.
   metadata?: Record<string, unknown> | Array<Record<string, unknown>>;
+  // Set only for a Claude Code (ACP) tool call awaiting the user's approval.
+  permission?: {
+    requestId: string;
+    options: Array<{ optionId: string; name: string; kind: string }>;
+    resolved?: boolean;
+  };
 }
 
 export interface Message {

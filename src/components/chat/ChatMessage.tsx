@@ -21,9 +21,48 @@ interface ChatMessageProps {
   isStreaming: boolean;
   toolCalls?: ToolCallInfo[];
   onOpenNote?: (noteId: number) => void;
+  onRespondPermission?: (callId: string, requestId: string, optionId: string | null) => void;
 }
 
-function ToolCallStep({ toolCall }: { toolCall: ToolCallInfo }) {
+function PermissionPrompt({
+  toolCall,
+  onRespond,
+}: {
+  toolCall: ToolCallInfo;
+  onRespond?: (callId: string, requestId: string, optionId: string | null) => void;
+}) {
+  const permission = toolCall.permission;
+  if (!permission) return null;
+  return (
+    <div className="px-2.5 py-2 bg-surface-1/60">
+      <p className="text-[11px] text-muted-foreground/80 mb-1.5">{toolCall.name}</p>
+      <div className="flex flex-wrap gap-1.5">
+        {permission.options.map((option) => (
+          <button
+            key={option.optionId}
+            onClick={() => onRespond?.(toolCall.id, permission.requestId, option.optionId)}
+            className={cn(
+              "px-2 py-1 rounded-md text-[11px] font-medium transition-colors border",
+              option.kind.startsWith("reject")
+                ? "border-destructive/30 text-destructive/80 hover:bg-destructive/10"
+                : "border-primary/30 text-primary hover:bg-primary/10"
+            )}
+          >
+            {option.name}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ToolCallStep({
+  toolCall,
+  onRespondPermission,
+}: {
+  toolCall: ToolCallInfo;
+  onRespondPermission?: (callId: string, requestId: string, optionId: string | null) => void;
+}) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const Icon = toolIcons[toolCall.name] || Search;
@@ -31,9 +70,18 @@ function ToolCallStep({ toolCall }: { toolCall: ToolCallInfo }) {
   const isError = toolCall.status === "error";
   const isCompleted = toolCall.status === "completed";
   const isClipboard = toolCall.name === "copy_to_clipboard" && isCompleted;
+  const awaitingPermission = !!toolCall.permission && !toolCall.permission.resolved;
 
   const resultLines = toolCall.result?.split("\n") ?? [];
   const hasDetail = resultLines.length > 1 && !isClipboard;
+
+  if (awaitingPermission) {
+    return (
+      <div className="relative rounded-md mb-1 overflow-hidden border-l-2 border-l-primary/60">
+        <PermissionPrompt toolCall={toolCall} onRespond={onRespondPermission} />
+      </div>
+    );
+  }
 
   return (
     <div
@@ -171,6 +219,7 @@ export function ChatMessage({
   isStreaming,
   toolCalls,
   onOpenNote,
+  onRespondPermission,
 }: ChatMessageProps) {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
@@ -229,7 +278,7 @@ export function ChatMessage({
             )}
           >
             {toolCalls.map((tc) => (
-              <ToolCallStep key={tc.id} toolCall={tc} />
+              <ToolCallStep key={tc.id} toolCall={tc} onRespondPermission={onRespondPermission} />
             ))}
           </div>
         )}

@@ -2,15 +2,18 @@ import { useTranslation } from "react-i18next";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { SectionHeader } from "../ui/SettingsSection";
 import InferenceConfigEditor from "./InferenceConfigEditor";
+import ClaudeCodeAgentToggle from "./ClaudeCodeAgentToggle";
 
 export default function ChatAgentSettings() {
   const { t } = useTranslation();
   const chatAgentPrompt = useSettingsStore((s) => s.customPrompts.chatAgent);
   const setCustomPrompt = useSettingsStore((s) => s.setCustomPrompt);
+  const useClaudeCode = useSettingsStore((s) => s.chatAgentUseClaudeCode);
 
   return (
     <div className="space-y-6">
-      <InferenceConfigEditor scope="chatIntelligence" />
+      <ClaudeCodeAgentToggle />
+      {!useClaudeCode && <InferenceConfigEditor scope="chatIntelligence" />}
 
       <div>
         <SectionHeader

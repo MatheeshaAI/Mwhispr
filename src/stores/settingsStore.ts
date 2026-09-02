@@ -744,6 +744,12 @@ export interface SettingsState
   noteFormattingDisableThinking: boolean;
   chatAgentDisableThinking: boolean;
 
+  // Routes the chat assistant through a local Claude Code process over the
+  // Agent Client Protocol instead of chatAgentMode/Provider/Model — billed
+  // against the user's own Claude subscription rather than an API key.
+  chatAgentUseClaudeCode: boolean;
+  setChatAgentUseClaudeCode: (value: boolean) => void;
+
   customPrompts: Record<PromptKind, string>;
   setCustomPrompt: (kind: PromptKind, value: string) => void;
 
@@ -1660,6 +1666,7 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
   dictationAgentVisionDisableThinking: readBoolean("dictationAgentVisionDisableThinking", true),
   noteFormattingDisableThinking: readBoolean("noteFormattingDisableThinking", true),
   chatAgentDisableThinking: readBoolean("chatAgentDisableThinking", true),
+  chatAgentUseClaudeCode: readBoolean("chatAgentUseClaudeCode", false),
 
   customPrompts: PROMPT_KIND_LIST.reduce(
     (acc, kind) => ({ ...acc, [kind]: readString(`customPrompt.${kind}`, "") }),
@@ -1706,6 +1713,7 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
   ),
   setNoteFormattingDisableThinking: createBooleanSetter("noteFormattingDisableThinking"),
   setChatAgentDisableThinking: createBooleanSetter("chatAgentDisableThinking"),
+  setChatAgentUseClaudeCode: createBooleanSetter("chatAgentUseClaudeCode"),
 
   setUseLocalWhisper: createBooleanSetter("useLocalWhisper"),
   setWhisperModel: createStringSetter("whisperModel"),

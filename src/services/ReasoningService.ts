@@ -38,7 +38,8 @@ import { extractApiErrorMessage } from "./ai/apiErrorMessage";
 import { clearTinfoilClientCache } from "./ai/tinfoilClient";
 import { resolveChatRoute } from "../helpers/chatRouting";
 import { assertAgentAllowedByPolicy, assertReasoningAllowedByPolicy } from "./reasoningPolicy";
-import type { InferenceMode } from "../types/electron";
+import { translateAcpUpdate } from "./ai/acpUpdateTranslator";
+import type { InferenceMode, AcpSessionUpdate, AcpPermissionRequest } from "../types/electron";
 
 export type ToolMetadata = Record<string, unknown> | Array<Record<string, unknown>>;
 
@@ -78,6 +79,13 @@ export type AgentStreamChunk =
       displayText: string;
       metadata?: ToolMetadata;
     }
+  | {
+      type: "permission_request";
+      callId: string;
+      requestId: string;
+      toolName: string;
+      options: Array<{ optionId: string; name: string; kind: string }>;
+    }
   | { type: "done"; finishReason?: string };
 
 function resolveLlmDispatchMode(
@@ -108,6 +116,7 @@ class ReasoningService extends BaseReasoningService {
   private streamAbortController: AbortController | null = null;
   private activeRequestControllers = new Set<AbortController>();
   private activeCloudStream: { requestId: string; cancel: () => void } | null = null;
+  private activeAcpStream: { requestId: string; cancel: () => void } | null = null;
   private cloudOperationGeneration = 0;
   private requestCancellationGeneration = 0;
 
@@ -951,6 +960,9 @@ class ReasoningService extends BaseReasoningService {
     const activeCloudStream = this.activeCloudStream;
     this.activeCloudStream = null;
     activeCloudStream?.cancel();
+    const activeAcpStream = this.activeAcpStream;
+    this.activeAcpStream = null;
+    activeAcpStream?.cancel();
   }
 
   /**
@@ -1183,6 +1195,119 @@ class ReasoningService extends BaseReasoningService {
 
     if (operationWasCancelled()) return;
     yield { type: "done", finishReason: "stop" };
+  }
+
+  /**
+   * Runs one chat turn through a local Claude Code process over the Agent
+   * Client Protocol (see `acpClaudeCodeManager.js`). Claude Code brings its
+   * own model, tools, and permission prompts — the chunk stream mirrors
+   * processTextStreamingCloud/AI so useChatStreaming needs no ACP branching.
+   */
+  processTextStreamingAcp(text: string): AsyncGenerator<AgentStreamChunk, void, unknown> {
+    return this._processTextStreamingAcp(text);
+  }
+
+  private async *_processTextStreamingAcp(
+    text: string
+  ): AsyncGenerator<AgentStreamChunk, void, unknown> {
+    assertAgentSessionAllowedByPolicy("claudeCodeAcp", "providers");
+    const ipcStream = this.streamFromAcpIPC(text);
+    for await (const chunk of ipcStream.stream) {
+      yield chunk;
+    }
+    if (ipcStream.wasCancelled()) return;
+    yield { type: "done", finishReason: "stop" };
+  }
+
+  private streamFromAcpIPC(text: string): {
+    stream: AsyncGenerator<AgentStreamChunk, void, unknown>;
+    wasCancelled: () => boolean;
+  } {
+    const queue: Array<AgentStreamChunk | { type: "__error"; error: string } | { type: "__end" }> =
+      [];
+    let resolve: (() => void) | null = null;
+    let cancelled = false;
+    let closed = false;
+    const requestId = crypto.randomUUID();
+    const electronAPI = window.electronAPI;
+
+    this.activeAcpStream?.cancel();
+
+    const cleanupChunk = electronAPI?.onAcpStreamChunk?.((payload) => {
+      if (payload.requestId !== requestId || closed || cancelled) return;
+      const chunk = translateAcpUpdate(payload.update);
+      if (chunk) queue.push(chunk);
+      resolve?.();
+    });
+    const cleanupPermission = electronAPI?.onAcpPermissionRequest?.(
+      (payload: AcpPermissionRequest & { requestId: string }) => {
+        if (payload.requestId !== requestId || closed || cancelled) return;
+        queue.push({
+          type: "permission_request",
+          callId: payload.toolCallId,
+          requestId: payload.requestId,
+          toolName: payload.title,
+          options: payload.options,
+        });
+        resolve?.();
+      }
+    );
+    const cleanupError = electronAPI?.onAcpStreamError?.((payload) => {
+      if (payload.requestId !== requestId || closed || cancelled) return;
+      queue.push({ type: "__error", error: payload.error });
+      resolve?.();
+    });
+    const cleanupEnd = electronAPI?.onAcpStreamEnd?.((payload) => {
+      if (payload.requestId !== requestId || closed || cancelled) return;
+      queue.push({ type: "__end" });
+      resolve?.();
+    });
+
+    const cleanup = () => {
+      if (closed) return;
+      closed = true;
+      cleanupChunk?.();
+      cleanupPermission?.();
+      cleanupError?.();
+      cleanupEnd?.();
+      if (this.activeAcpStream?.requestId === requestId) this.activeAcpStream = null;
+    };
+
+    const cancel = () => {
+      if (closed || cancelled) return;
+      cancelled = true;
+      electronAPI?.cancelAcpStream?.();
+      queue.length = 0;
+      queue.push({ type: "__end" });
+      resolve?.();
+    };
+    this.activeAcpStream = { requestId, cancel };
+
+    electronAPI?.startAcpStream?.(requestId, text);
+
+    const generator = (async function* () {
+      try {
+        while (true) {
+          if (queue.length === 0) {
+            await new Promise<void>((r) => {
+              resolve = r;
+            });
+            resolve = null;
+          }
+
+          while (queue.length > 0) {
+            const item = queue.shift()!;
+            if (item.type === "__end") return;
+            if (item.type === "__error") throw new Error((item as { error: string }).error);
+            yield item as AgentStreamChunk;
+          }
+        }
+      } finally {
+        cleanup();
+      }
+    })();
+
+    return { stream: generator, wasCancelled: () => cancelled };
   }
 
   async isAvailable(): Promise<boolean> {

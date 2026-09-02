@@ -1280,6 +1280,7 @@ export default function NoteEditor({
               agentState={embeddedChat.agentState}
               onTextSubmit={embeddedChat.sendMessage}
               onCancel={embeddedChat.cancelStream}
+              onRespondPermission={embeddedChat.respondToPermission}
               noteConversations={embeddedChat.noteConversations}
               activeConversationId={embeddedChat.activeConversationId}
               onSwitchConversation={embeddedChat.switchConversation}
@@ -1296,6 +1297,7 @@ export default function NoteEditor({
           agentState={embeddedChat.agentState}
           onTextSubmit={embeddedChat.sendMessage}
           onCancel={embeddedChat.cancelStream}
+          onRespondPermission={embeddedChat.respondToPermission}
           noteConversations={embeddedChat.noteConversations}
           activeConversationId={embeddedChat.activeConversationId}
           onSwitchConversation={embeddedChat.switchConversation}

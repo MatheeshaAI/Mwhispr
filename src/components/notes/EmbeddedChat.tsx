@@ -19,6 +19,7 @@ interface EmbeddedChatProps {
   agentState: AgentState;
   onTextSubmit: (text: string) => void;
   onCancel: () => void;
+  onRespondPermission?: (callId: string, requestId: string, optionId: string | null) => void;
   noteConversations?: ContainerConversationItem[];
   activeConversationId?: number | null;
   onSwitchConversation?: (id: number) => void;
@@ -45,6 +46,7 @@ export default function EmbeddedChat({
   agentState,
   onTextSubmit,
   onCancel,
+  onRespondPermission,
   noteConversations,
   activeConversationId,
   onSwitchConversation,
@@ -132,7 +134,12 @@ export default function EmbeddedChat({
     <>
       {header}
       <div className="flex-1 min-h-0 flex flex-col **:data-chat-bubble:max-w-full">
-        <ChatMessages messages={messages} emptyState={<EmptyState />} onOpenNote={handleOpenNote} />
+        <ChatMessages
+          messages={messages}
+          emptyState={<EmptyState />}
+          onOpenNote={handleOpenNote}
+          onRespondPermission={onRespondPermission}
+        />
       </div>
       <ChatInput
         agentState={agentState}

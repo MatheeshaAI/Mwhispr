@@ -7,9 +7,15 @@ interface ChatMessagesProps {
   messages: Message[];
   emptyState?: React.ReactNode;
   onOpenNote?: (noteId: number) => void;
+  onRespondPermission?: (callId: string, requestId: string, optionId: string | null) => void;
 }
 
-export function ChatMessages({ messages, emptyState, onOpenNote }: ChatMessagesProps) {
+export function ChatMessages({
+  messages,
+  emptyState,
+  onOpenNote,
+  onRespondPermission,
+}: ChatMessagesProps) {
   // Follow the stream only while the user is at the bottom; scrolling up to
   // re-read must not be yanked back down by the next token.
   const {
@@ -45,6 +51,7 @@ export function ChatMessages({ messages, emptyState, onOpenNote }: ChatMessagesP
                 isStreaming={msg.isStreaming}
                 toolCalls={msg.toolCalls}
                 onOpenNote={onOpenNote}
+                onRespondPermission={onRespondPermission}
               />
             ))}
         </div>

@@ -163,7 +163,11 @@ export default function ChatView() {
         <div className="flex-1 min-w-80 flex flex-col">
           {hasActiveChat ? (
             <>
-              <ChatMessages messages={persistence.messages} emptyState={<NewChatEmptyState />} />
+              <ChatMessages
+                messages={persistence.messages}
+                emptyState={<NewChatEmptyState />}
+                onRespondPermission={streaming.respondToPermission}
+              />
               <ChatInput
                 agentState={streaming.agentState}
                 partialTranscript=""
