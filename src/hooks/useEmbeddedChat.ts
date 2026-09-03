@@ -25,6 +25,7 @@ interface UseEmbeddedChatReturn {
   agentState: AgentState;
   sendMessage: (text: string) => Promise<void>;
   cancelStream: () => void;
+  respondToPermission: (callId: string, requestId: string, optionId: string | null) => void;
   noteConversations: NoteConversationItem[];
   activeConversationId: number | null;
   switchConversation: (id: number) => Promise<void>;
@@ -154,6 +155,7 @@ export function useEmbeddedChat({
     agentState: streaming.agentState,
     sendMessage,
     cancelStream: streaming.cancelStream,
+    respondToPermission: streaming.respondToPermission,
     noteConversations,
     activeConversationId: conversationId,
     switchConversation,

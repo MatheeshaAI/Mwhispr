@@ -17,6 +17,7 @@ interface OverviewAskSectionProps {
   agentState: AgentState;
   onTextSubmit: (text: string) => void;
   onCancel: () => void;
+  onRespondPermission?: (callId: string, requestId: string, optionId: string | null) => void;
   conversations: ContainerConversationItem[];
   activeConversationId: number | null;
   onSwitchConversation: (id: number) => void;
@@ -29,6 +30,7 @@ export function OverviewAskSection({
   agentState,
   onTextSubmit,
   onCancel,
+  onRespondPermission,
   conversations,
   activeConversationId,
   onSwitchConversation,
@@ -54,7 +56,11 @@ export function OverviewAskSection({
       {conversationPicker}
       {hasMessages && (
         <div className="max-h-[min(26rem,50vh)] flex flex-col">
-          <ChatMessages messages={messages} onOpenNote={onOpenNote} />
+          <ChatMessages
+            messages={messages}
+            onOpenNote={onOpenNote}
+            onRespondPermission={onRespondPermission}
+          />
         </div>
       )}
       <ChatInput

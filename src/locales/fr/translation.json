@@ -3546,6 +3546,12 @@
         "localDesc": "Modèles sur l'appareil. Entièrement privé.",
         "selfHostedDesc": "Votre propre serveur sur votre réseau.",
         "enterpriseDesc": "Utilisez le compte cloud de votre organisation (AWS, Azure, GCP)."
+      },
+      "claudeCode": {
+        "label": "Use Claude Code",
+        "description": "Route the chat assistant through a local Claude Code session, billed against your Claude subscription instead of an API key.",
+        "unavailable": "Claude Code couldn't be started. Try reinstalling OpenWhispr.",
+        "loginHint": "Requires the Claude Code CLI signed in on this machine. If prompts fail, open a terminal and run \"claude login\"."
       }
     },
     "chat": {
@@ -3661,7 +3667,8 @@
       "calendar": "Calendrier",
       "api": "API",
       "mcp": "MCP",
-      "cli": "CLI"
+      "cli": "CLI",
+      "mcpServers": "MCP Servers"
     },
     "api": {
       "title": "Clés API",
@@ -3716,6 +3723,37 @@
     "notABot": {
       "title": "OpenWhispr est un enregistreur de réunions, pas un bot",
       "description": "OpenWhispr capture l'audio directement depuis votre système — il ne rejoint jamais vos réunions en tant que participant. Connectez simplement votre calendrier et prenez vos notes normalement."
+    },
+    "mcpServers": {
+      "description": "Connect MCP servers to give your AI assistant more tools — search a codebase, query a database, call an internal API.",
+      "empty": "No MCP servers connected yet.",
+      "status": {
+        "connected": "Connected",
+        "connecting": "Connecting…",
+        "error": "Error",
+        "disconnected": "Disconnected"
+      },
+      "toolCount_one": "{{count}} tool available",
+      "toolCount_other": "{{count}} tools available",
+      "reconnect": "Reconnect",
+      "remove": "Remove",
+      "addServer": "Add MCP server",
+      "addFailed": "Couldn't connect to that server. Check the details and try again.",
+      "removeConfirm": "Remove \"{{name}}\"?",
+      "removeDescription": "OpenWhispr will disconnect from this server and its tools will no longer be available to your assistant.",
+      "form": {
+        "name": "Name",
+        "namePlaceholder": "My MCP server",
+        "transport": "Connection type",
+        "stdio": "Local command (stdio)",
+        "http": "HTTP",
+        "sse": "SSE",
+        "command": "Command",
+        "args": "Arguments (one per line)",
+        "env": "Environment variables (KEY=value, one per line)",
+        "url": "Server URL",
+        "headers": "Headers (Key: value, one per line)"
+      }
     }
   },
   "notesView": {

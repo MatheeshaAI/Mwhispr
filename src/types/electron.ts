@@ -23,6 +23,59 @@ export interface PolicyFailureMetadata {
   details?: unknown;
 }
 
+export type McpServerTransport = "stdio" | "http" | "sse";
+
+export interface McpServerConfigInput {
+  id?: string;
+  name: string;
+  transport: McpServerTransport;
+  enabled?: boolean;
+  // stdio transport
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  // http/sse transport
+  url?: string;
+  headers?: Record<string, string>;
+}
+
+export interface McpServerDescriptor {
+  id: string;
+  name: string;
+  transport: McpServerTransport;
+  enabled: boolean;
+  createdAt: number;
+  // stdio transport
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  // http/sse transport
+  url?: string;
+  headers?: Record<string, string>;
+  status: "connecting" | "connected" | "error" | "disconnected";
+  error?: string;
+  tools: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>;
+}
+
+export interface McpConnectedTool {
+  serverId: string;
+  serverName: string;
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+}
+
+/** Mirrors ACP's `SessionNotification.update` union (agent_message_chunk, tool_call, etc.). */
+export type AcpSessionUpdate = { sessionUpdate: string } & Record<string, unknown>;
+
+export interface AcpPermissionRequest {
+  requestId: string;
+  sessionId: string;
+  toolCallId: string;
+  title: string;
+  options: Array<{ optionId: string; name: string; kind: string }>;
+}
+
 export interface NoteRecordingProviderModel {
   id: string;
   name: string;
@@ -2520,6 +2573,42 @@ declare global {
         callback: (payload: PolicyFailureMetadata & { requestId: string; error: string }) => void
       ) => () => void;
       onAgentStreamEnd?: (callback: (payload: { requestId: string }) => void) => () => void;
+
+      // MCP client (user-configured MCP servers)
+      mcpListServers?: () => Promise<McpServerDescriptor[]>;
+      mcpAddServer?: (
+        config: McpServerConfigInput
+      ) => Promise<{ success: boolean; server?: McpServerDescriptor; error?: string }>;
+      mcpUpdateServer?: (
+        id: string,
+        patch: Partial<McpServerConfigInput>
+      ) => Promise<{ success: boolean; server?: McpServerDescriptor; error?: string }>;
+      mcpRemoveServer?: (id: string) => Promise<{ success: boolean; error?: string }>;
+      mcpReconnectServer?: (
+        id: string
+      ) => Promise<{ success: boolean; server?: McpServerDescriptor; error?: string }>;
+      mcpListConnectedTools?: () => Promise<McpConnectedTool[]>;
+      mcpCallTool?: (
+        serverId: string,
+        toolName: string,
+        args: Record<string, unknown>
+      ) => Promise<{ success: boolean; result?: unknown; error?: string }>;
+
+      // Claude Code via ACP (event-based for real-time session updates)
+      startAcpStream?: (requestId: string, text: string) => void;
+      cancelAcpStream?: () => void;
+      onAcpStreamChunk?: (
+        callback: (payload: { requestId: string; update: AcpSessionUpdate }) => void
+      ) => () => void;
+      onAcpStreamError?: (
+        callback: (payload: { requestId: string; error: string }) => void
+      ) => () => void;
+      onAcpStreamEnd?: (
+        callback: (payload: { requestId: string; stopReason?: string }) => void
+      ) => () => void;
+      onAcpPermissionRequest?: (callback: (payload: AcpPermissionRequest) => void) => () => void;
+      acpRespondToPermission?: (requestId: string, optionId: string | null) => Promise<boolean>;
+      acpCheckAvailability?: () => Promise<{ available: boolean }>;
 
       // Agent cloud tools
       agentOpenNote?: (noteId: number) => Promise<{ success: boolean; error?: string }>;

@@ -95,6 +95,8 @@ export interface ChatStreaming {
   activeToolName: string;
   sendToAI: (userText: string, allMessages: Message[], options?: SendToAIOptions) => Promise<void>;
   cancelStream: () => void;
+  /** Answers a pending Claude Code (ACP) tool permission prompt. Pass optionId null to deny. */
+  respondToPermission: (callId: string, requestId: string, optionId: string | null) => void;
 }
 
 // An image attaches only where the provider's AI-SDK client is image-wired
@@ -235,16 +237,22 @@ export function useChatStreaming({
       const settings = getSettings();
       const chatConfig = selectResolvedLLMConfig(settings, "chatIntelligence");
       const chatAgentMode = chatConfig.mode || "openwhispr";
+      // Claude Code (ACP) is a standalone toggle, not one of chatAgentMode's
+      // provider slots: it brings its own model and tools, billed against the
+      // user's Claude subscription rather than chatAgentProvider/Model.
+      const isAcpAgent = settings.chatAgentUseClaudeCode === true;
       const policyState = usePolicyStore.getState();
-      const policyProvider =
-        chatAgentMode === "openwhispr"
+      const policyMode = isAcpAgent ? "providers" : chatAgentMode;
+      const policyProvider = isAcpAgent
+        ? "claudeCodeAcp"
+        : chatAgentMode === "openwhispr"
           ? "openwhispr"
           : chatAgentMode === "local"
             ? "local"
             : chatConfig.provider;
       if (
         !isAgentAllowed(policyState) ||
-        !isLlmSelectionAllowed(policyState, { mode: chatAgentMode, provider: policyProvider })
+        !isLlmSelectionAllowed(policyState, { mode: policyMode, provider: policyProvider })
       ) {
         // The user message is already appended; answer it instead of dead-ending silently.
         const restriction = !isAgentAllowed(policyState)
@@ -259,10 +267,12 @@ export function useChatStreaming({
       }
 
       setAgentState("thinking");
-      const isCloudAgent = chatAgentMode === "openwhispr" && settings.isSignedIn;
-      const isLanAgent = chatAgentMode === "self-hosted" && !!chatConfig.remoteUrl;
-      const isCustomAgent = chatAgentMode === "providers" && chatConfig.provider === "custom";
+      const isCloudAgent = !isAcpAgent && chatAgentMode === "openwhispr" && settings.isSignedIn;
+      const isLanAgent = !isAcpAgent && chatAgentMode === "self-hosted" && !!chatConfig.remoteUrl;
+      const isCustomAgent =
+        !isAcpAgent && chatAgentMode === "providers" && chatConfig.provider === "custom";
       const isLocalProvider =
+        !isAcpAgent &&
         !isEnterpriseProvider(chatConfig.provider) &&
         ![
           "openai",
@@ -276,7 +286,10 @@ export function useChatStreaming({
         ].includes(chatConfig.provider);
       const localModelCanUseTool =
         isLocalProvider && estimateModelSizeB(chatConfig.model) >= LOCAL_TOOL_MIN_PARAMS_B;
-      const supportsTools = isCloudAgent || !isLocalProvider || localModelCanUseTool;
+      // Claude Code brings its own tools (plus the same MCP servers, wired
+      // through its session directly) — OpenWhispr's ToolRegistry stays unused.
+      const supportsTools =
+        !isAcpAgent && (isCloudAgent || !isLocalProvider || localModelCanUseTool);
 
       const scope = searchScopeRef.current;
       let registry: ToolRegistry | null = null;
@@ -291,7 +304,7 @@ export function useChatStreaming({
         if (toolRegistryRef.current?.key === cacheKey) {
           registry = toolRegistryRef.current.registry;
         } else {
-          registry = createToolRegistry({
+          registry = await createToolRegistry({
             isSignedIn: settings.isSignedIn,
             calendarConnected,
             cloudBackupEnabled: settings.cloudBackupEnabled,
@@ -419,6 +432,8 @@ export function useChatStreaming({
             executeToolCall,
             ...(cloudScreenContext ? { screenContext: cloudScreenContext } : {}),
           });
+        } else if (isAcpAgent) {
+          stream = ReasoningService.processTextStreamingAcp(userText);
         } else {
           const aiTools = registry?.toAISDKFormat();
           stream = ReasoningService.processTextStreamingAI(
@@ -498,6 +513,25 @@ export function useChatStreaming({
             );
             setAgentState("streaming");
             completeToolActivity();
+          } else if (chunk.type === "permission_request") {
+            announceResponse();
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId && m.toolCalls
+                  ? {
+                      ...m,
+                      toolCalls: m.toolCalls.map((tc) =>
+                        tc.id === chunk.callId
+                          ? {
+                              ...tc,
+                              permission: { requestId: chunk.requestId, options: chunk.options },
+                            }
+                          : tc
+                      ),
+                    }
+                  : m
+              )
+            );
           }
         }
 
@@ -583,11 +617,33 @@ export function useChatStreaming({
     ]
   );
 
+  const respondToPermission = useCallback(
+    (callId: string, requestId: string, optionId: string | null) => {
+      window.electronAPI?.acpRespondToPermission?.(requestId, optionId);
+      setMessages((prev) =>
+        prev.map((m) =>
+          !m.toolCalls
+            ? m
+            : {
+                ...m,
+                toolCalls: m.toolCalls.map((tc) =>
+                  tc.id === callId && tc.permission
+                    ? { ...tc, permission: { ...tc.permission, resolved: true } }
+                    : tc
+                ),
+              }
+        )
+      );
+    },
+    [setMessages]
+  );
+
   return {
     agentState,
     toolStatus,
     activeToolName,
     sendToAI,
     cancelStream,
+    respondToPermission,
   };
 }

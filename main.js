@@ -336,6 +336,8 @@ let linuxPortalAudioManager = null;
 let windowsLoopbackAudioManager = null;
 let meetingAecManager = null;
 let qdrantManager = null;
+let mcpClientManager = null;
+let acpClaudeCodeManager = null;
 let ipcHandlers = null;
 let cliBridge = null;
 let globeKeyAlertShown = false;
@@ -527,6 +529,13 @@ function initializeCoreManagers() {
   windowManager.windowsKeyManager = windowsKeyManager;
   windowManager.linuxKeyManager = linuxKeyManager;
 
+  const McpClientManager = require("./src/helpers/mcpClientManager");
+  mcpClientManager = new McpClientManager();
+  const AcpClaudeCodeManager = require("./src/helpers/acpClaudeCodeManager");
+  acpClaudeCodeManager = new AcpClaudeCodeManager({
+    getMcpServers: () => mcpClientManager.list().filter((s) => s.enabled),
+  });
+
   // IPC handlers must be registered before window content loads
   ipcHandlers = new IPCHandlers({
     environmentManager,
@@ -552,6 +561,8 @@ function initializeCoreManagers() {
     windowsLoopbackAudioManager,
     meetingAecManager,
     getQdrantManager: () => qdrantManager,
+    getMcpClientManager: () => mcpClientManager,
+    getAcpClaudeCodeManager: () => acpClaudeCodeManager,
     getTrayManager: () => trayManager,
     oauthProtocolRegistered: protocolRegistered,
     oauthProtocol: OAUTH_PROTOCOL,
@@ -568,10 +579,23 @@ function registerSidecars() {
   sidecarRegistry.register("llama", () => modelManager.stopServer());
   const onnxWorkerClient = require("./src/helpers/onnxWorkerClient");
   sidecarRegistry.register("onnx", () => onnxWorkerClient.stop());
+  if (mcpClientManager) sidecarRegistry.register("mcp-clients", () => mcpClientManager.stop());
+  if (acpClaudeCodeManager) {
+    sidecarRegistry.register("acp-claude-code", () => acpClaudeCodeManager.stop());
+  }
 }
 
 // Phase 2: Non-critical setup after windows are visible
 function initializeDeferredManagers() {
+  if (mcpClientManager) {
+    mcpClientManager.connectEnabled().catch((err) => {
+      require("./src/helpers/debugLogger").warn(
+        "MCP server auto-connect error",
+        { error: err?.message },
+        "mcp"
+      );
+    });
+  }
   ensureYdotool().catch((err) => {
     require("./src/helpers/debugLogger").warn(
       "ydotool setup error",

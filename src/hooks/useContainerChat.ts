@@ -29,6 +29,7 @@ interface UseContainerChatReturn {
   agentState: AgentState;
   sendMessage: (text: string) => Promise<void>;
   cancelStream: () => void;
+  respondToPermission: (callId: string, requestId: string, optionId: string | null) => void;
   conversations: ContainerConversationItem[];
   activeConversationId: number | null;
   switchConversation: (id: number) => Promise<void>;
@@ -143,6 +144,7 @@ export function useContainerChat({
     agentState: streaming.agentState,
     sendMessage,
     cancelStream: streaming.cancelStream,
+    respondToPermission: streaming.respondToPermission,
     conversations,
     activeConversationId: conversationId,
     switchConversation,

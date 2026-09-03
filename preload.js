@@ -1020,6 +1020,39 @@ contextBridge.exposeInMainWorld("electronAPI", {
     (callback) => (_event, payload) => callback(payload)
   ),
 
+  // MCP client (user-configured MCP servers)
+  mcpListServers: () => ipcRenderer.invoke("mcp-list-servers"),
+  mcpAddServer: (config) => ipcRenderer.invoke("mcp-add-server", config),
+  mcpUpdateServer: (id, patch) => ipcRenderer.invoke("mcp-update-server", id, patch),
+  mcpRemoveServer: (id) => ipcRenderer.invoke("mcp-remove-server", id),
+  mcpReconnectServer: (id) => ipcRenderer.invoke("mcp-reconnect-server", id),
+  mcpListConnectedTools: () => ipcRenderer.invoke("mcp-list-connected-tools"),
+  mcpCallTool: (serverId, toolName, args) =>
+    ipcRenderer.invoke("mcp-call-tool", serverId, toolName, args),
+
+  // Claude Code via ACP (event-based for real-time session updates)
+  startAcpStream: (requestId, text) => ipcRenderer.send("acp-stream-start", requestId, text),
+  cancelAcpStream: () => ipcRenderer.send("acp-stream-cancel"),
+  onAcpStreamChunk: registerListener(
+    "acp-stream-chunk",
+    (callback) => (_event, payload) => callback(payload)
+  ),
+  onAcpStreamError: registerListener(
+    "acp-stream-error",
+    (callback) => (_event, payload) => callback(payload)
+  ),
+  onAcpStreamEnd: registerListener(
+    "acp-stream-end",
+    (callback) => (_event, payload) => callback(payload)
+  ),
+  onAcpPermissionRequest: registerListener(
+    "acp-permission-request",
+    (callback) => (_event, payload) => callback(payload)
+  ),
+  acpRespondToPermission: (requestId, optionId) =>
+    ipcRenderer.invoke("acp-respond-permission", requestId, optionId),
+  acpCheckAvailability: () => ipcRenderer.invoke("acp-check-availability"),
+
   // Agent cloud tools
   agentWebSearch: (query, numResults) => ipcRenderer.invoke("agent-web-search", query, numResults),
   agentOpenNote: (noteId) => ipcRenderer.invoke("agent-open-note", noteId),
